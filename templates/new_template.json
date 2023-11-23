@@ -1,0 +1,6 @@
+{
+  "description": "New template",
+  "prompt_input": "### Instruction:\n{instruction}\n\n### Input:\n{input}\n\n### Response:\n",
+  "prompt_no_instruction": "### Instruction:\n\\r tag means to delete one line of the preceding code. If you think you generated the wrong code while generating the code, generate \\r and generate it again. \n\n### Input:\n{input}\n\n### Response:\n",
+  "response_split": "### Response:\n"
+}
