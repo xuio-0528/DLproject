@@ -1,56 +1,57 @@
-import json
-import os.path as osp
-from typing import Union
+from datasets import load_dataset
+import json 
+from transformers import AutoTokenizer
+from tqdm import tqdm
 
+print('시작')
+data = load_dataset('codeparrot/apps')
+tokenizer = AutoTokenizer.from_pretrained("microsoft/phi-1_5")
 
-class Prompter(object):
-    __slots__ = ("template", "_verbose")
+train = []
+test = []
 
-    def __init__(self, template_name: str = "", verbose: bool = False):
-        self._verbose = verbose
-        if not template_name:
-            # Enforce the default here, so the constructor can be called with '' and will not break.
-            template_name = "alpaca"
-        file_name = osp.join("templates", f"{template_name}.json")
-        if not osp.exists(file_name):
-            raise ValueError(f"Can't read {file_name}")
-        with open(file_name) as fp:
-            self.template = json.load(fp)
-        if self._verbose:
-            print(
-                f"Using prompt template {template_name}: {self.template['description']}"
-            )
+print('train 시작')
 
-    def generate_prompt(
-        self,
-        instruction: Union[None, str] = None,
-        input: Union[None, str] = None,
-        label: Union[None, str] = None,
-    ) -> str:
-        # returns the full prompt from instruction and optional input
-        # if a label (=response, =output) is provided, it's also appended.
-        if not instruction and input:
-            res = self.template["prompt_no_instruction"].format(input=input)
-        elif input:
-            res = self.template["prompt_input"].format(
-                instruction=instruction, input=input
-            )
-        # if input:
-        #     res = self.template["prompt_input"].format(
-        #         input=input
-        #     )
-        else:
-            res = self.template["prompt_no_input"].format(
-                instruction=instruction
-            )
-        if label:
-            res = f"{res}{label}"
-        if self._verbose:
-            print(res)
-        return res
+for data_point in tqdm(data['train']):
+    try:
+      question = data_point['question']
+      if len(tokenizer(question).input_ids) > 512:
+          continue
+      inputs = json.loads(data_point['input_output'])['inputs']
+      output = json.loads(data_point['input_output'])['outputs']
+      cnt = 0
+      for solution in data_point['solutions']:
+          if cnt == 5:
+              break
+          if len(tokenizer(solution).input_ids) > 512:
+              continue
+          cnt +=1
+          train.append({'description' : question, 'solution' : solution, 'input' : inputs, 'output' : output})
+    except:
+        continue
 
-    def get_response(self, output: str) -> str:
-        return output.split(self.template["response_split"])[1]
+with open("apps_train.jsonl" , encoding= "utf-8",mode="w") as file:
+  for line in train:
+    file.write(json.dumps(line))
+    file.write('\n')
+
+print('test 시작')
+
+for data_point in tqdm(data['test']):
+    try:
+      question = data_point['question']
+      if len(tokenizer(question).input_ids) > 512:
+          continue
+      inputs = data_point['input_output']['inputs']
+      output = data_point['input_output']['outpus']
+      cnt = 0
+      test.append({'description' : question, 'solution' : "", 'input' : inputs, 'output' : output})
+    except:
+      continue
+
+with open("apps_test.jsonl" , encoding= "utf-8",mode="w") as file:
+    for line in test:
+        file.write(json.dumps(line))
+        file.write('\n')
     
-    def get_input(self, output: str) -> str:
-        return output.split(self.template["response_split"])[0]
+print('완료')
