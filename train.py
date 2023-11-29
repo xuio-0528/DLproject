@@ -26,13 +26,13 @@ from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
 from transformers import TrainerCallback, get_cosine_schedule_with_warmup
 
 
-# class LogCallback(TrainerCallback):
-#     def init(self, state):
-#         self.state = state
-#     def on_step_end(self, args, state, control, logs = None, logging_steps=1, **kwargs):
-#         if state.global_step % logging_steps == 0:
-#             # 매 logging_steps 스텝마다 training loss 출력
-#             print(f"Step {state.global_step}: Train loss {state.log_history[-1]}")
+class LogCallback(TrainerCallback):
+    def init(self, state):
+        self.state = state
+    def on_step_end(self, args, state, control, logs = None, logging_steps=1, **kwargs):
+        if state.global_step % logging_steps == 0:
+            # 매 logging_steps 스텝마다 training loss 출력
+            print(f"Step {state.global_step}: Train loss {state.log_history[-1]}")
 
 os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 
@@ -47,10 +47,10 @@ def train(
     data_path: str = "./",
     output_dir: str = "./",
     # training hyperparams
-    batch_size: int = 1,
+    batch_size: int = 128,
     micro_batch_size: int = 1,
-    num_epochs: int = 200,
-    learning_rate: float = 3e-5,
+    num_epochs: int = 10,
+    learning_rate: float = 3e-4,
     cutoff_len: int = 1024,
     val_set_size: int = 2000,
     # lora hyperparams
@@ -67,10 +67,10 @@ def train(
     add_eos_token: bool = True,
     group_by_length: bool = False,  # faster, but produces an odd training loss curve
     # wandb params
-    # wandb_project: str = "lora-llama2-code",
-    # wandb_run_name: str = "first",
-    # wandb_watch: str = "false",  # options: false | gradients | all
-    # wandb_log_model: str = "false",  # options: false | true
+    wandb_project: str = "dlproject",
+    wandb_run_name: str = "first",
+    wandb_watch: str = "false",  # options: false | gradients | all
+    wandb_log_model: str = "false",  # options: false | true
     resume_from_checkpoint: str = None,  # either training checkpoint or final adapter
     prompt_template_name: str = "no_instruction",  # The prompt template to use, will default to alpaca.
     seed: int = 42,
@@ -94,10 +94,10 @@ def train(
             f"train_on_inputs: {train_on_inputs}\n"
             f"add_eos_token: {add_eos_token}\n"
             f"group_by_length: {group_by_length}\n"
-            # f"wandb_project: {wandb_project}\n"
-            # f"wandb_run_name: {wandb_run_name}\n"
-            # f"wandb_watch: {wandb_watch}\n"
-            # f"wandb_log_model: {wandb_log_model}\n"
+            f"wandb_project: {wandb_project}\n"
+            f"wandb_run_name: {wandb_run_name}\n"
+            f"wandb_watch: {wandb_watch}\n"
+            f"wandb_log_model: {wandb_log_model}\n"
             f"resume_from_checkpoint: {resume_from_checkpoint or False}\n"
             f"prompt template: {prompt_template_name}\n"
         )
@@ -118,19 +118,20 @@ def train(
         gradient_accumulation_steps = gradient_accumulation_steps // world_size
 
     # Check if parameter passed or if set within environ
-    # use_wandb = len(wandb_project) > 0 or (
-    #     "WANDB_PROJECT" in os.environ and len(os.environ["WANDB_PROJECT"]) > 0
-    # )
-    # # Only overwrite environ if wandb param passed
-    # if len(wandb_project) > 0:
-    #     os.environ["WANDB_PROJECT"] = wandb_project
-    # if len(wandb_watch) > 0:
-    #     os.environ["WANDB_WATCH"] = wandb_watch
-    # if len(wandb_log_model) > 0:
-    #     os.environ["WANDB_LOG_MODEL"] = wandb_log_model
+    use_wandb = len(wandb_project) > 0 or (
+        "WANDB_PROJECT" in os.environ and len(os.environ["WANDB_PROJECT"]) > 0
+    )
+    # Only overwrite environ if wandb param passed
+    if len(wandb_project) > 0:
+        os.environ["WANDB_PROJECT"] = wandb_project
+    if len(wandb_watch) > 0:
+        os.environ["WANDB_WATCH"] = wandb_watch
+    if len(wandb_log_model) > 0:
+        os.environ["WANDB_LOG_MODEL"] = wandb_log_model
 
     # test할 때는 wandb 사용하지 않음
-    # use_wandb = None
+    use_wandb = None
+    wandb.init(project='dlproject')
     bnb_config = BitsAndBytesConfig(
         load_in_4bit=True,
         bnb_4bit_use_double_quant=True,
@@ -145,10 +146,7 @@ def train(
     )
     tokenizer = AutoTokenizer.from_pretrained(base_model)
     tokenizer.padding_side = "left"  # Allow batched inference
-    # tokenizer.pad_token_id = tokenizer.eos_token_id
-    tokenizer.pad_token_id = (
-        0  # unk. we want this to be different from the eos token
-    )
+    tokenizer.pad_token_id = tokenizer.eos_token_id
 
     def tokenize(prompt, add_eos_token=True):
         # there's probably a way to do this with the tokenizer settings
@@ -249,7 +247,7 @@ def train(
         model=model,
         train_dataset=train_data,
         eval_dataset=val_data,
-        # callbacks=[LogCallback],
+        callbacks=[LogCallback],
         args=transformers.TrainingArguments(
             per_device_train_batch_size=micro_batch_size,
             per_device_eval_batch_size=micro_batch_size,

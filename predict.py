@@ -151,19 +151,14 @@ def main(
         return output
 
     data = []
-    origin_data = load_dataset('codeparrot/apps')['test']
-    with jsonlines.open('/root/eunki/baseline/data/codecontest/ver_2/train_ver1_test.jsonl') as reader:
+    with jsonlines.open('./apps_train.jsonl') as reader:
         for pred_item in tqdm(reader):
             data.append(pred_item)
     for row in tqdm(data):
-        # prompt = row['prompt']
-        task_id = int(row['task_id'])
-        prompt = origin_data[task_id]['description']
-        # instruction = prompt + row['completion']
-        instruction = prompt
+        instruction = data['description']
         result = evaluate(instruction)
         row['pred'] = result
-    with jsonlines.open('./pred_1epochdata.jsonl', mode='w') as writer:
+    with jsonlines.open('./predict_check.jsonl', mode='w') as writer:
         for prefix in tqdm(data):
             writer.write(prefix)
 
